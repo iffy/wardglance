@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <title>Ward at a Glance</title>
+    <style>
+    * {
+      box-sizing: border-box;
+    }
+    body,
+    html {
+      margin: 0;
+      padding: 0;
+      font-family: arial;
+    }
+    </style>
+    <script src="js/react-15.2.1.js"></script>
+    <script src="js/react-dom-15.2.1.js"></script>
+    <script src="js/browser.min.js"></script>
+  </head>
+  <body>
+    Username: <input type="text" id="username">
+    Password: <input type="password" id="password">
+    <button id="go">Go</button>
+
+    <div id="content">Content</div>
+
+    <script type="text/babel">
+    console.log('babel is working?');
+    const React = require('react');
+    const {ipcRenderer} = require('electron');
+
+    document.getElementById('go').addEventListener('click', function(ev) {
+      var username = document.getElementById('username').value;
+      var password = document.getElementById('password').value;
+      ipcRenderer.send('getdata', username, password);
+    })
+
+    ipcRenderer.on('unit_number', function(event, unit_number) {
+      console.log('unit number', unit_number);
+    });
+    ipcRenderer.on('callings', function(event, callings) {
+      console.log('callings', callings);
+    });
+
+    var Something = React.createClass({
+      render: function() {
+        return (<div>This is something</div>);
+      }
+    });
+
+    ReactDOM.render(
+      <Something />,
+      document.getElementById('content')
+    );
+
+    </script>
+  </body>
+</html>
