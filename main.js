@@ -64,71 +64,141 @@ app.on('activate', () => {
 });
 
 
-ipcMain.on('getdata', function(ev, username, password) {
+
+ipcMain.on('set-creds', function(ev, username, password) {
   client.setCredentials(username, password);
-  client.authenticateThen(function(session) {
-    client.getUnitNumber(session, function(unit_number) {
-      ev.sender.send('unit_number', unit_number);
-      client.getCallings(session, function(callings) {
-        ev.sender.send('callings', callings);
-      });
-    })  
-  });
+  ev.sender.send('message', "Credentials set");
+});
+
+ipcMain.on('get-data', function(ev) {
+  client.getCallings()
+  .then(function(callings) {
+    ev.sender.send('callings', callings);
+  }.bind(this))
+  .catch(function(err) {
+    ev.sender.send('error', "Error getting callings", err);
+  })
 });
 
 class LDSClient {
   constructor() {
-    this.username = '';
-    this.password = '';
-    this.unit_number = '';
+    this.username = null;
+    this.password = null;
+    this.unit_number = null;
     this.callings = null;
+    this.session = null;
   }
   setCredentials(username, password) {
     this.username = username;
     this.password = password;
+    this.session = null;
+    this.unit_number = null;
+    this.callings = null;
   }
-  authenticateThen(callback) {
-    var j = request.jar()
-    var session = request.defaults({jar:j});
-    session.get('https://ident.lds.org/sso/UI/Login', {
-      qs: {
-        'service': 'credentials',
-        'goto': 'https://www.lds.org/signinout/',
-        'lang': 'eng',
-      }
-    }, function() {
-      session.post('https://ident.lds.org/sso/UI/Login', {
-        form: {
-          'IDToken1': this.username,
-          'IDToken2': this.password,
-          'IDButton': 'Log In',
+  authenticatedSession() {
+    if (this.session) {
+      return Promise.resolve(this.session);
+    }
+
+    if (!this.username || !this.password) {
+      return Promise.reject("No username/password");
+    }
+
+    return new Promise(function(resolve, reject) {
+      this.session = request.defaults({jar:request.jar()});
+      setTimeout(function() {
+        this.session = null;
+      }.bind(this), 1000 * 60 * 10);
+      console.log('GET ident.lds.org');
+      this.session.get('https://ident.lds.org/sso/UI/Login', {
+        qs: {
+          'service': 'credentials',
+          'goto': 'https://www.lds.org/signinout/',
+          'lang': 'eng',
         }
-      }, function() {
-        callback(session);
+      }, function(err, r, body) {
+        console.log('response', r.statusCode);
+        console.log('POST ident.lds.org', this.username);
+        this.session.post('https://ident.lds.org/sso/UI/Login', {
+          form: {
+            'IDToken1': this.username,
+            'IDToken2': this.password,
+            'IDButton': 'Log In',
+          }
+        }, function(err, r, body) {
+          if (err) {
+            console.log('error', err);
+            this.session = null;
+            reject(err);
+          } else {
+            console.log('response', r.statusCode);
+            resolve(this.session);
+          }
+        }.bind(this));
+      }.bind(this));  
+    }.bind(this));
+  }
+  getUnitNumber() {
+    if (this.unit_number) {
+      return Promise.resolve(this.unit_number);
+    } else {
+      return this.authenticatedSession()
+      .then(function(session) {
+        return new Promise(function(resolve, reject) {
+          console.log('GET www.lds.org member-list');
+          session.get('https://www.lds.org/mls/mbr/records/member-list?lang=eng', function(e, r, body) {
+            console.log('response', r.statusCode);
+            console.log('headers', r.headers);
+            var regexp = /window.unitNumber\s=\s'(.*?)';/;
+            var match = regexp.exec(body);
+            if (match) {
+              this.unit_number = match[1];
+              resolve(this.unit_number);
+            } else {
+              console.log('body', body);
+              reject("Could not get unit number");
+            }
+          }.bind(this));
+        }.bind(this));
+      }.bind(this));
+    }
+  }
+  getCallings() {
+    if (this.callings) {
+      return Promise.resolve(this.callings);
+    } else {
+      return this.authenticatedSession()
+      .then(function(session) {
+        return this.getUnitNumber()
+        .then(function(unit_number) {
+          return [session, unit_number];
+        })
+      }.bind(this))
+      .then(data => {
+        var session = data[0];
+        var unit_number = data[1];
+        console.log('GET members-with-callings');
+        return new Promise(function(resolve, reject) {
+          session.get('https://www.lds.org/mls/mbr/services/report/members-with-callings', {
+            qs: {
+              'lang': 'eng',
+              'unitNumber': unit_number,
+            },
+            headers: {
+              'Accept': 'application/json',
+            }
+          }, function(err, r, body) {
+            if (err) {
+              reject(err);
+            } else {
+              this.callings = JSON.parse(body);
+              resolve(this.callings);
+            }
+            
+          }.bind(this));
+        }.bind(this));
       });
-    }.bind(this));
-  }
-  getUnitNumber(session, cb) {
-    session.get('https://www.lds.org/mls/mbr/records/member-list?lang=eng', function(e, r, body) {
-      var regexp = /window.unitNumber\s=\s'(.*?)';/;
-      var match = regexp.exec(body);
-      this.unit_number = match[1];
-      cb(this.unit_number);
-    }.bind(this));
-  }
-  getCallings(session, cb) {
-    session.get('https://www.lds.org/mls/mbr/services/report/members-with-callings', {
-      qs: {
-        'lang': 'eng',
-        'unitNumber': this.unit_number,
-      },
-      headers: {
-        'Accept': 'application/json',
-      }
-    }, function(err, r, body) {
-      this.callings = JSON.parse(body);
-      cb(this.callings);
-    }.bind(this));
+    }
   }
 }
 

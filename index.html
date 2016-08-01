@@ -21,7 +21,10 @@
   <body>
     Username: <input type="text" id="username">
     Password: <input type="password" id="password">
+    <button id="set-creds">Set</button>
+
     <button id="go">Go</button>
+
 
     <div id="content">Content</div>
 
@@ -30,18 +33,26 @@
     const React = require('react');
     const {ipcRenderer} = require('electron');
 
-    document.getElementById('go').addEventListener('click', function(ev) {
+    document.getElementById('set-creds').addEventListener('click', function(ev) {
       var username = document.getElementById('username').value;
       var password = document.getElementById('password').value;
-      ipcRenderer.send('getdata', username, password);
+      ipcRenderer.send('set-creds', username, password);
+    });
+
+    document.getElementById('go').addEventListener('click', function(ev) {
+      ipcRenderer.send('get-data');
     })
 
-    ipcRenderer.on('unit_number', function(event, unit_number) {
-      console.log('unit number', unit_number);
-    });
     ipcRenderer.on('callings', function(event, callings) {
       console.log('callings', callings);
     });
+
+    ipcRenderer.on('error', function(event, msg, details) {
+      console.log('-> ERROR', msg, details);
+    })
+    ipcRenderer.on('message', function(event, msg) {
+      console.log('->', msg);
+    })
 
     var Something = React.createClass({
       render: function() {
