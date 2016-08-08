@@ -3,20 +3,11 @@
   <head>
     <meta charset="UTF-8">
     <title>Ward at a Glance</title>
-    <style>
-    * {
-      box-sizing: border-box;
-    }
-    body,
-    html {
-      margin: 0;
-      padding: 0;
-      font-family: arial;
-    }
-    </style>
+    <link rel="stylesheet" type="text/css" href="style.css">
     <script src="js/react-15.2.1.js"></script>
     <script src="js/react-dom-15.2.1.js"></script>
     <script src="js/browser.min.js"></script>
+    <script src="js/lodash.min.js"></script>
   </head>
   <body>
     Username: <input type="text" id="username">
@@ -30,8 +21,11 @@
 
     <script type="text/babel">
     console.log('babel is working?');
-    const React = require('react');
     const {ipcRenderer} = require('electron');
+
+    var State = {
+      callings: [],
+    };
 
     document.getElementById('set-creds').addEventListener('click', function(ev) {
       var username = document.getElementById('username').value;
@@ -45,6 +39,8 @@
 
     ipcRenderer.on('callings', function(event, callings) {
       console.log('callings', callings);
+      State.callings = callings;
+      render();
     });
 
     ipcRenderer.on('error', function(event, msg, details) {
@@ -54,17 +50,91 @@
       console.log('->', msg);
     })
 
-    var Something = React.createClass({
+    function shorten_name(name) {
+      return name.replace("Sunday School", "SS")
+        .replace("Elders Quorum", "EQ")
+        .replace("Home Teaching", "HT")
+        .replace("High Priest", "HP")
+        .replace("First Counselor", "1st")
+        .replace("Second Counselor", "2nd")
+        .replace("President", "Pres.")
+        .replace("Visiting Teaching", "VT")
+        .replace("Relief Society", "RS")
+        .replace("Compassionate Service", "Comp. Serv.")
+        .replace("Assistant", "Assist.")
+        .replace("Coordinator", "Coord.")
+        .replace("Neighborhood Emergency Preparedness Committee", "Emerg. Comm.")
+        .replace("Family History Consultant", "FH");
+    }
+
+    var OrgChart = React.createClass({
       render: function() {
-        return (<div>This is something</div>);
+        var orgs = {}
+        _.each(this.props.callings, function(calling) {
+          console.log(calling);
+          var name = calling.spokenName;
+          var org = calling.organization;
+          var pos = calling.position;
+          var pos_type_id = calling.positionTypeId;
+          var id = calling.id;
+          var displaySequence = calling.displaySequence;
+          if (!orgs[org]) {
+            orgs[org] = [];
+          }
+          orgs[org].push(calling);
+        });
+        var org_elems = [];
+        _.each(orgs, function(v, k) {
+          console.log('org', k);
+          var callings = _.sortBy(v, ['positionTypeId']);
+          var items = [];
+          var by_calling_type = {};
+          _.each(callings, function(calling) {
+            var shortname = shorten_name(calling.position);
+            console.log('calling id', calling.id, calling.spokenName, calling.position, shortname);
+            if (!by_calling_type[shortname]) {
+              var item = {
+                position: shortname,
+                people: [],
+              }
+              by_calling_type[shortname] = item;
+              items.push(item);
+            }
+            var item = by_calling_type[shortname];
+            item.people.push(calling);
+          })
+          var calling_elems = _.map(items, function(item) {
+            var people_elems = _.map(item.people, function(person) {
+              return (<div key={person.positionId} className="person">{person.spokenName}</div>);
+            })
+            var classes = "calling";
+            if (people_elems.length > 1) {
+              classes += ' multiple';
+            }
+            return (<div key={item.position} className={classes}>
+              <div className="title">{item.position}</div>
+              {people_elems}
+            </div>);
+          });
+          var org_name = shorten_name(k);
+          org_elems.push(<div key={k} className="org">
+            <div className="org-title">{org_name}</div>
+            <div className="org-callings">{calling_elems}</div>
+          </div>);
+        });
+        return (<div>
+          {org_elems}
+        </div>);
       }
     });
 
-    ReactDOM.render(
-      <Something />,
-      document.getElementById('content')
-    );
-
+    function render() {
+      ReactDOM.render(
+        <OrgChart callings={State.callings} />,
+        document.getElementById('content')
+      );
+    }
+    render();
     </script>
   </body>
 </html>
